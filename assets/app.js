@@ -1,21 +1,29 @@
 // CSV parsing via PapaParse CDN (loaded in HTML)
+
+// ---------- helpers ----------
 const toNum = (v) => {
   const n = Number(String(v ?? "").trim());
   return Number.isFinite(n) ? n : 0;
 };
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
-  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-}[c]));
 
-async function loadCsv(url){
+const esc = (s) =>
+  String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[c]));
+
+async function loadCsv(url) {
   const res = await fetch(url, { cache: "no-store" });
-  if(!res.ok) throw new Error(`Failed to load ${url}: ${res.status}`);
+  if (!res.ok) throw new Error(`Failed to load ${url}: ${res.status}`);
   const text = await res.text();
   const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
   return parsed.data || [];
 }
 
-function recipeCard(r){
+function recipeCard(r) {
   return `
     <div class="recipe">
       <div class="name">${esc(r.name)}</div>
@@ -31,23 +39,30 @@ function recipeCard(r){
   `;
 }
 
-async function initRecommendations(){
+// -----------------------------------------------------------
+// ✅ Recommendations (uses window.RECOMMENDATIONS_CSV_URL)
+// -----------------------------------------------------------
+async function initRecommendations() {
   const holder = document.getElementById("cards");
   const info = document.getElementById("countInfo");
 
-  const rows = await loadCsv("./data/top_recommendations_lunch.csv");
+  const url =
+    window.RECOMMENDATIONS_CSV_URL ||
+    "./data/top_recommendations_lunch.csv"; // fallback only if file exists locally
+
+  const rows = await loadCsv(url);
 
   let data = rows
-    .map(r => ({
+    .map((r) => ({
       name: (r.Name ?? r.name ?? "").trim(),
       category: (r.Category ?? r.category ?? "").trim(),
       calories: toNum(r.Calories ?? r.calories),
       protein: toNum(r.Protein ?? r.protein),
       carbs: toNum(r.Carbs ?? r.carbs),
       fat: toNum(r.Fat ?? r.fat),
-      score: toNum(r.Score ?? r.final_score ?? r.score)
+      score: toNum(r.Score ?? r.final_score ?? r.score),
     }))
-    .filter(x => x.name);
+    .filter((x) => x.name);
 
   const state = {
     q: "",
@@ -55,7 +70,7 @@ async function initRecommendations(){
     pMin: 0,
     cMax: 200,
     fMax: 120,
-    sort: "score"
+    sort: "score",
   };
 
   const bind = (id, key, transform = (v) => v) => {
@@ -66,11 +81,12 @@ async function initRecommendations(){
     });
   };
 
-  bind("q", "q", (v)=> String(v));
-  bind("calMax", "calMax", (v)=> Number(v));
-  bind("pMin", "pMin", (v)=> Number(v));
-  bind("cMax", "cMax", (v)=> Number(v));
-  bind("fMax", "fMax", (v)=> Number(v));
+  bind("q", "q", (v) => String(v));
+  bind("calMax", "calMax", (v) => Number(v));
+  bind("pMin", "pMin", (v) => Number(v));
+  bind("cMax", "cMax", (v) => Number(v));
+  bind("fMax", "fMax", (v) => Number(v));
+
   document.getElementById("sort").addEventListener("change", (e) => {
     state.sort = e.target.value;
     render();
@@ -78,29 +94,31 @@ async function initRecommendations(){
 
   const setLabel = (id, value) => {
     const el = document.getElementById(id + "Val");
-    if(el) el.textContent = value;
+    if (el) el.textContent = value;
   };
 
-  function render(){
+  function render() {
     setLabel("calMax", state.calMax);
     setLabel("pMin", state.pMin);
     setLabel("cMax", state.cMax);
     setLabel("fMax", state.fMax);
 
     const q = state.q.trim().toLowerCase();
-    let out = data.filter(r => {
+    let out = data.filter((r) => {
       const hay = (r.name + " " + r.category).toLowerCase();
       const okQ = q ? hay.includes(q) : true;
-      return okQ &&
+      return (
+        okQ &&
         r.calories <= state.calMax &&
         r.protein >= state.pMin &&
         r.carbs <= state.cMax &&
-        r.fat <= state.fMax;
+        r.fat <= state.fMax
+      );
     });
 
-    if(state.sort === "score") out.sort((a,b)=> (b.score||0)-(a.score||0));
-    if(state.sort === "calories") out.sort((a,b)=> a.calories-b.calories);
-    if(state.sort === "protein") out.sort((a,b)=> b.protein-a.protein);
+    if (state.sort === "score") out.sort((a, b) => (b.score || 0) - (a.score || 0));
+    if (state.sort === "calories") out.sort((a, b) => a.calories - b.calories);
+    if (state.sort === "protein") out.sort((a, b) => b.protein - a.protein);
 
     out = out.slice(0, 60);
     info.textContent = `${out.length} results (showing top 60)`;
@@ -110,36 +128,46 @@ async function initRecommendations(){
   render();
 }
 
-async function initPlan(){
+// -----------------------------------------------------------
+// ✅ Weekly Plan (uses window.WEEKLY_PLAN_CSV_URL)
+// -----------------------------------------------------------
+async function initPlan() {
   const root = document.getElementById("planRoot");
-  const rows = await loadCsv("./data/weekly_plan.csv");
 
-  const data = rows.map(r => ({
-    day: (r.Day ?? r.day ?? "").trim(),
-    meal: (r.Meal ?? r.meal ?? "").trim(),
-    name: (r.Name ?? r.name ?? "").trim(),
-    category: (r.Category ?? r.category ?? "").trim(),
-    calories: toNum(r.Calories ?? r.calories),
-    protein: toNum(r.Protein ?? r.protein),
-    carbs: toNum(r.Carbs ?? r.carbs),
-    fat: toNum(r.Fat ?? r.fat),
-    score: toNum(r.Score ?? r.final_score ?? r.score)
-  })).filter(x => x.day && x.meal && x.name);
+  const url =
+    window.WEEKLY_PLAN_CSV_URL ||
+    "./data/weekly_plan.csv"; // fallback only if file exists locally
+
+  const rows = await loadCsv(url);
+
+  const data = rows
+    .map((r) => ({
+      day: (r.Day ?? r.day ?? "").trim(),
+      meal: (r.Meal ?? r.meal ?? "").trim(),
+      name: (r.Name ?? r.name ?? "").trim(),
+      category: (r.Category ?? r.category ?? "").trim(),
+      calories: toNum(r.Calories ?? r.calories),
+      protein: toNum(r.Protein ?? r.protein),
+      carbs: toNum(r.Carbs ?? r.carbs),
+      fat: toNum(r.Fat ?? r.fat),
+      score: toNum(r.Score ?? r.final_score ?? r.score),
+    }))
+    .filter((x) => x.day && x.meal && x.name);
 
   const grouped = {};
-  for(const r of data){
+  for (const r of data) {
     grouped[r.day] ??= [];
     grouped[r.day].push(r);
   }
 
-  const dayOrder = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const dayOrder = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   root.innerHTML = dayOrder
-    .filter(d => grouped[d]?.length)
-    .map(day => {
+    .filter((d) => grouped[d]?.length)
+    .map((day) => {
       const items = grouped[day];
       const meals = { Breakfast: [], Lunch: [], Dinner: [] };
-      for(const it of items){
+      for (const it of items) {
         (meals[it.meal] ??= []).push(it);
       }
 
@@ -166,3 +194,7 @@ async function initPlan(){
     })
     .join("");
 }
+
+// expose functions
+window.initRecommendations = initRecommendations;
+window.initPlan = initPlan;
